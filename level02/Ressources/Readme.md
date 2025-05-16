@@ -1,39 +1,120 @@
-# Rapport de Vulnérabilité : Manipulation de Valeur dans un Formulaire
-
-## Nom de la Faille
-**Manipulation de Valeur dans un Formulaire**
-## OWASP
-**A01:2021 – Contrôles d'accès défaillants**
+# Rapport de Vulnérabilité : Analyse de trafic réseau avec un fichier `.pcap`
 
 ## Description
-Cette faille permet à un attaquant de manipuler la valeur soumise via le formulaire de la page `survey`. Le formulaire contient un menu déroulant (`<select>`) avec des options allant de 1 à 10. En modifiant la valeur d'une option pour une valeur supérieure à 10 (par exemple, 11), l'attaquant peut déclencher une réponse inattendue du serveur, comme l'affichage d'un flag.
+
+Cette faille repose sur l’analyse d’un fichier réseau au format `.pcap` contenant un mot de passe transmis via le protocole TCP. Ce fichier peut être transféré sur la machine locale puis ouvert dans **Wireshark**, un outil d’analyse de paquets réseau. En suivant un flux TCP, on peut observer le mot de passe tapé et le reconstituer, malgré certains caractères masqués.
 
 ## Comment Exploiter la Faille
-1. **Étape 1** : Accédez à la page `survey` contenant le formulaire.
-2. **Étape 2** : Inspectez le formulaire à l'aide des outils de développement du navigateur (clic droit > Inspecter).
-3. **Étape 3** : Modifiez la valeur d'une des options du menu déroulant pour une valeur supérieure à 10. Par exemple, changez :
-   ```html
-   <option value="10">10</option>
-   ```
-   en :
-   ```html
-   <option value="11">10</option>
-   ```
-4. **Étape 4** : Soumettez le formulaire en sélectionnant la valeur modifiée.
-5. **Étape 5** : Le serveur retourne le flag :
-   ```
-   Flag : 03a944b434d5baff05f46c4bede5792551a2595574bcafc9a6e25f67c382ccaa
-   ```
+
+### Étape 1 : Récupération du fichier `.pcap`
+
+Un fichier `level02.pcap` est présent sur la machine distante.
+Un fichier `.pcap` (Packet Capture) est une capture brute de paquets réseau. Il contient toutes les données échangées sur un réseau à un instant donné.
+
+Utiliser `scp` pour le transférer sur la machine locale :
+
+```bash
+scp -P 4242 level02@192.168.56.101:/home/user/level02/level02.pcap .
+```
+
+### Étape 2 : Ouverture dans Wireshark
+
+Changer les droits du fichier si nécessaire :
+
+```bash
+chmod 644 level02.pcap
+```
+
+L’ouvrir dans **Wireshark**, un logiciel graphique permettant d’inspecter et d’analyser des paquets réseau de manière interactive.
+
+### Étape 3 : Suivre le flux TCP
+
+Faire un clic droit sur n’importe quelle ligne dans la liste des paquets →
+**Follow** → **TCP Stream**
+
+On obtient :
+
+```
+Password: ft_wandr...NDRel.L0L
+```
+
+### Étape 4 : Afficher les données en hexadécimal
+
+Changer le format d’affichage : **Show data as → Hex Dump**
+
+Extrait obtenu :
+
+```
+000000B9  66                                                 f
+000000BA  74                                                 t
+000000BB  5f                                                 _
+000000BC  77                                                 w
+000000BD  61                                                 a
+000000BE  6e                                                 n
+000000BF  64                                                 d
+000000C0  72                                                 r
+000000C1  7f                                                 .
+000000C2  7f                                                 .
+000000C3  7f                                                 .
+000000C4  4e                                                 N
+000000C5  44                                                 D
+000000C6  52                                                 R
+000000C7  65                                                 e
+000000C8  6c                                                 l
+000000C9  7f                                                 .
+000000CA  4c                                                 L
+000000CB  30                                                 0
+000000CC  4c                                                 L
+000000CD  0d                                                 .
+```
+
+Les caractères `7f` correspondent au caractère ASCII **DEL**.
+Il s'agit d'une touche de suppression, utilisée pour effacer les caractères précédents.
+
+### Étape 5 : Reconstitution du mot de passe
+
+En tenant compte des caractères effacés, on reconstitue le mot de passe final :
+
+```
+ft_waNDReL0L
+```
+
+### Étape 6 : Connexion au compte `flag02`
+
+```bash
+su flag02
+```
+
+**Mot de passe :**
+
+```
+ft_waNDReL0L
+```
+
+### Étape 7 : Récupération du flag
+
+```bash
+getflag
+```
+
+**Flag obtenu :**
+
+```
+kooda2puivaav1idi4f57q8iq
+```
+
+---
 
 ## Comment Résoudre la Faille
-Pour corriger cette vulnérabilité, suivez les étapes suivantes :
 
-- **Validation côté serveur** : Vérifiez toujours les données soumises par l'utilisateur côté serveur. Ne faites pas confiance aux données côté client.
-- **Limitation des valeurs acceptées** : Utilisez une liste blanche de valeurs autorisées pour le paramètre `valeur`.
-- **Gestion des erreurs** : Redirigez vers une page d'erreur ou affichez un message approprié si une valeur non valide est soumise.
-- **Journalisation** : Journalisez les tentatives de soumission de valeurs non valides pour détecter les activités suspectes.
+Pour corriger cette vulnérabilité :
+
+* **Ne jamais transmettre de mot de passe en clair sur un réseau** : Utiliser des protocoles chiffrés comme SSH, TLS, etc.
+* **Éviter les captures de trafic stockées sans protection** : Les fichiers `.pcap` peuvent contenir des données extrêmement sensibles.
+* **Mettre en place une détection d’intrusion réseau (IDS)** : Pour alerter en cas de transmission suspecte.
 
 ## Conclusion
-Cette vulnérabilité met en évidence l'importance de valider les données côté serveur et de ne pas faire confiance aux données côté client. En implémentant les corrections ci-dessus, vous pouvez sécuriser votre application contre ce type de manipulation.
+
+Cette vulnérabilité montre qu’un simple enregistrement de trafic réseau peut suffire à intercepter un mot de passe s’il est transmis sans chiffrement. L’analyse avec Wireshark révèle clairement les frappes clavier, y compris les suppressions, permettant à un attaquant de reconstituer le mot de passe complet.
 
 ---
