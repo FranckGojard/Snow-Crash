@@ -1,39 +1,125 @@
-# Rapport de Vulnérabilité : Manipulation de Cookie pour Élévation de Privilèges
-
-## Nom de la Faille
-**Manipulation de Cookie pour Élévation de Privilèges**
-## OWASP
-**A01:2021 – Contrôles d'accès défaillants**
+# Rapport de Vulnérabilité : Extraction de mot de passe depuis `/etc/passwd` et bruteforce avec John The Ripper
 
 ## Description
-Cette faille permet à un attaquant de modifier la valeur du cookie `I_am_admin` pour obtenir des privilèges administratifs. Par défaut, le cookie est défini avec la valeur `false` (hashée en MD5). En modifiant cette valeur pour `true` (hashée en MD5), l'attaquant peut accéder à des fonctionnalités ou des informations sensibles, comme un flag.
+
+Cette faille repose sur la présence d’un mot de passe hashé directement dans le fichier `/etc/passwd`. En affichant son contenu, on peut repérer une ligne contenant un hash appartenant à l’utilisateur `flag01`. Ce hash peut ensuite être cracké à l’aide de l’outil **John The Ripper** pour obtenir le mot de passe en clair.
 
 ## Comment Exploiter la Faille
-1. **Étape 1** : Identifiez le cookie `I_am_admin` dans les outils de développement du navigateur (onglet "Application" ou "Stockage").
-2. **Étape 2** : La valeur par défaut du cookie est le hash MD5 de `false` :
-   ```
-   I_am_admin = 4b9971fcdc9a797a1b6678d6a7b5e5d5
-   ```
-3. **Étape 3** : Remplacez la valeur du cookie par le hash MD5 de `true` :
-   ```
-   I_am_admin = b326b5062b2f0e69046810717534cb09
-   ```
-4. **Étape 4** : Rafraîchissez la page ou soumettez une requête. Si la vérification du cookie est incorrectement implémentée, vous obtiendrez un accès administratif et le flag :
-   ```
-   Flag : df2eb4ba34ed059a1e3e89ff4dfc13445f104a1a52295214def1c4fb1693a5c3
-   ```
+
+### Étape 1 : Lecture du fichier `/etc/passwd`
+
+```bash
+cat /etc/passwd
+```
+
+**Extrait pertinent :**
+
+```
+...
+flag00:x:3000:3000::/home/flag/flag00:/bin/bash  
+flag01:42hDRfypTqqnw:3001:3001::/home/flag/flag01:/bin/bash  
+flag02:x:3002:3002::/home/flag/flag02:/bin/bash 
+... 
+```
+
+On récupère le hash suivant :
+
+```
+42hDRfypTqqnw
+```
+
+### Étape 2 : Installation de John The Ripper
+
+Télécharger la version officielle depuis :
+[https://www.openwall.com/john/](https://www.openwall.com/john/)
+
+Fichier utilisé :
+**1.9.0 core sources in tar.xz**
+
+Une fois extrait, compiler les sources en suivant la procédure fournie dans le fichier `INSTALL` :
+
+```bash
+make clean generic
+```
+
+L’exécutable `john` est maintenant disponible dans le dossier `run`.
+
+### Étape 3 : Création du fichier contenant le hash
+
+Créer un fichier `file.txt` contenant :
+
+```
+42hDRfypTqqnw
+```
+
+### Étape 4 : Cracker le mot de passe
+
+Lancer John sur le fichier :
+
+```bash
+run/john file.txt
+```
+
+Une fois terminé, afficher le mot de passe trouvé :
+
+```bash
+run/john --show file.txt
+```
+
+**Mot de passe obtenu :**
+
+```
+?:abcdefg
+```
+
+### Étape 5 : Connexion au compte `flag01`
+
+```bash
+su flag01
+```
+
+**Mot de passe :**
+
+```
+abcdefg
+```
+
+### Étape 6 : Récupération du flag
+
+```bash
+getflag
+```
+
+**Flag obtenu :**
+
+```
+f2av5il02puano7naaf6adaaf
+```
+
+### Étape 6 : Passage au niveau suivant
+
+```bash
+su level02
+```
+
+**Mot de passe :**
+
+```
+f2av5il02puano7naaf6adaaf
+```
+
+---
 
 ## Comment Résoudre la Faille
-Pour corriger cette vulnérabilité, suivez les étapes suivantes :
 
-- **Ne pas se fier aux cookies côté client** : Les cookies ne doivent jamais être utilisés pour stocker des informations sensibles ou critiques comme les privilèges d'accès.
-- **Validation côté serveur** : Vérifiez toujours les privilèges de l'utilisateur côté serveur, en utilisant des sessions sécurisées.
-- **Utiliser des tokens sécurisés** : Si des cookies sont nécessaires, utilisez des tokens signés et chiffrés pour empêcher toute manipulation.
-- **Hachage sécurisé** : Si vous devez stocker des valeurs dans des cookies, utilisez des algorithmes de hachage sécurisés et salés (comme bcrypt ou Argon2).
+Pour corriger cette vulnérabilité :
+
+* **Ne jamais stocker les mots de passe dans `/etc/passwd`** : Ils doivent être stockés dans `/etc/shadow`, qui est lisible uniquement par root.
+* **Utiliser des algorithmes de hachage robustes** : Le format de hash utilisé ici est trop faible et facilement bruteforcable.
+* **Restreindre les accès aux fichiers système** : Assurez-vous que les utilisateurs ne peuvent lire que ce qui leur est strictement nécessaire.
 
 ## Conclusion
-Cette vulnérabilité démontre les dangers de la confiance excessive envers les données côté client, comme les cookies. En implémentant des vérifications côté serveur et en utilisant des méthodes sécurisées pour gérer les privilèges, vous pouvez protéger votre application contre ce type d'attaque.
 
-### Remarque
-- Le hash MD5 de `false` est `4b9971fcdc9a797a1b6678d6a7b5e5d5`.
-- Le hash MD5 de `true` est `b326b5062b2f0e69046810717534cb09`.
+Cette vulnérabilité montre qu’un simple accès en lecture à un fichier système mal configuré peut exposer des mots de passe utilisateurs. Une séparation claire des fichiers sensibles, une politique de hachage robuste et un contrôle des permissions sont essentiels pour sécuriser un système Unix.
+
+---
