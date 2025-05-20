@@ -1,3 +1,7 @@
+Voici ton texte complété :
+
+---
+
 # Rapport de Vulnérabilité : Contournement de filtre par lien symbolique
 
 ## Description
@@ -70,6 +74,15 @@ Pour corriger cette vulnérabilité :
 * **Vérifier l'identité réelle du fichier** : Utiliser `realpath()`, `stat()` ou vérifier l'inode ou l’UID propriétaire.
 * **Limiter les chemins d'accès** : Restreindre les accès à un répertoire spécifique, sans autoriser les liens symboliques extérieurs.
 
+## Étape Finale
+
+On se connecte ensuite à l’utilisateur `flag08` en utilisant le mot de passe obtenu pour exécuter la commande suivante et obtenir le flag :
+
+```bash
+getflag
+```
+
+**Flag récupéré** : `25749xKZ8L7DkSCwJkT9dyv6f`
 ## Conclusion
 
 Cette vulnérabilité montre qu’un contrôle basé uniquement sur le nom d’un fichier est insuffisant. En créant un lien symbolique vers une ressource protégée, un attaquant peut facilement contourner cette restriction. Il est essentiel de **valider la cible réelle** des fichiers manipulés pour garantir la sécurité.
