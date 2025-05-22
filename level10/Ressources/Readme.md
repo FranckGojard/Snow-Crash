@@ -1,33 +1,45 @@
-# Rapport de Vulnérabilité : Faille XSS (Cross-Site Scripting)
 
-## Nom de la Faille
-Faille XSS basée sur les attributs (non persistante)
-## OWASP
-**A03:2021 – Injection**
+---
 
-## Description
-Cette faille permet à un attaquant d’injecter du code malveillant directement dans un formulaire de feedback en utilisant des balises ou caractères spéciaux pour contourner la validation côté client. 
+### 🧊 Rapport de réussite – Snow Crash Level 10
 
-### Comment Exploiter la Faille
-Pour exploiter cette faille, il suffit de renseigner des caractères ou des balises spécifiques dans le formulaire. Voici un exemple avec une balise non filtrée :
+**📌 Objectif** :
+Contourner les restrictions de lecture d’un fichier (`token`) en exploitant une vulnérabilité **TOCTOU** (Time-Of-Check To Time-Of-Use) via un binaire qui utilise les **sockets** pour transmettre le contenu d’un fichier.
 
-```
-<script
-```
+---
 
-Cette balise contourne la validation car la casse n’est pas vérifiée, permettant ainsi de passer le filtrage basique. Le serveur interprète alors cette balise comme un script valide, menant potentiellement à une exécution de code.
+**🔍 Analyse** :
 
-Lors de l'exécution, le flag est directement retourné dans la réponse du serveur.
+* Le binaire cible ouvrait un fichier temporaire (`/tmp/playload`) avant de le transmettre via une socket.
+* L’utilisateur n’avait pas les droits pour lire directement le fichier `token`.
+* `/tmp` étant accessible en écriture, il était possible d’y manipuler des fichiers.
 
-### Comment Corriger la Faille
-Pour corriger cette vulnérabilité, voici quelques bonnes pratiques :
+---
 
-1. **Validation côté serveur :** Toujours valider et filtrer les entrées côté serveur, même si une validation côté client est déjà mise en place.
-2. **Échappement des caractères spéciaux :** Encoder les caractères spéciaux (comme `<`, `>`, et `&`) afin qu’ils ne soient pas interprétés comme du code.
-3. **Utilisation d’en-têtes de sécurité :** Mettre en place les en-têtes HTTP appropriés (comme `Content-Security-Policy`) pour empêcher l'exécution de scripts non approuvés.
-4. **Sanitisation des entrées :** Nettoyer les données saisies par l'utilisateur avant de les afficher ou de les traiter.
+**🧠 Exploitation** :
 
-## Conclusion
-Cette vulnérabilité met en évidence l'importance de bien filtrer et encoder toutes les données d'entrée côté serveur. L'absence de contrôles stricts permet aux attaquants d'exécuter du code malveillant et de compromettre la sécurité de l'application.
+* Mise en place d’un script Bash exploitant une **race condition** :
 
+  ```bash
+  while true; do
+    echo "test" > /tmp/playload
+    rm /tmp/playload
+    ln -s ~/token /tmp/playload
+  done
+  ```
+* But : remplacer `/tmp/playload` **juste après la vérification** par le programme, mais **juste avant son ouverture**, pour rediriger la lecture vers `~/token`.
 
+---
+
+**📬 Transmission** :
+
+* Utilisation de `nc` pour capter le contenu envoyé par le programme sur le port ouvert.
+* Exécution du binaire pendant que le script tourne.
+* Le flag a été récupéré via la socket, comme prévu.
+
+---
+
+**✅ Résultat** :
+Le flag a été intercepté avec succès, en contournant les permissions via une attaque TOCTOU bien synchronisée. 🫡
+
+---
