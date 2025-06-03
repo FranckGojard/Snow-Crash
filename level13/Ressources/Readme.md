@@ -1,30 +1,128 @@
-# Rapport de Vulnérabilité : XSS via Paramètre `src` sur la Page Media
+Voici le README correspondant, dans le même format clair et précis que les précédents :
 
-## Nom de la Faille
+---
 
-**XSS via le paramètre *`src`* sur la page media**
+## Rapport de Vulnérabilité : Manipulation de Valeur Retour via Débogueur (GDB)
 
-## OWASP
-**A03:2021 – Injection**
+### Description
 
+Cette vulnérabilité exploite un programme (`level13`) qui vérifie explicitement l’UID réel de l’utilisateur qui l’exécute grâce à la fonction système `getuid()`. Le programme refuse de révéler le token s’il n’est pas lancé par un utilisateur spécifique (ici l’UID `4242`). Cependant, en interceptant la fonction `getuid()` via un débogueur (`gdb`), il est possible de manipuler sa valeur de retour, ce qui permet de contourner cette vérification et de récupérer le flag.
 
-## Description
+---
 
-Cette faille permet l'exécution de code JavaScript malveillant via le paramètre `src` sur la page `media`. En injectant un payload encodé en Base64, un attaquant peut exécuter du JavaScript dans le navigateur de la victime, ce qui peut mener à du vol de cookies, du détournement de session ou d'autres attaques XSS.
+### Comment Exploiter la Faille
 
-## Comment Exploiter la Faille
+**Étape 1 : Analyser le comportement du programme**
 
-1. **Accéder à la page vulnérable** :
-2. **Injecter un script malveillant encodé en Base64** :
-- `data:text/html;base64,PHNjcmlwdD5hbGVydCg0Mik8L3NjcmlwdD4=`
+Exécutez d'abord directement le binaire :
 
-## Comment Résoudre la Faille
+```shell
+./level13
+```
 
-- **Filtrage et validation des entrées** : Ne pas permettre l'utilisation de `data:` comme source d'image.
-- **Encodage du contenu** : Utiliser `htmlspecialchars()` ou `Content-Security-Policy (CSP)` pour empêcher l'exécution de scripts.
-- **Utilisation d'une liste blanche** : Restreindre les valeurs autorisées pour `src` aux fichiers locaux prédéfinis.
+Résultat :
 
-## Conclusion
+```
+UID 2013 started us but we we expect 4242
+```
 
-Cette vulnérabilité permet d'exécuter du JavaScript arbitraire en manipulant le paramètre `src` de la page media. Une correction adéquate est essentielle pour empêcher l'exploitation XSS et protéger les utilisateurs contre des attaques potentielles.
+Cela indique clairement que le programme attend un UID spécifique (4242), différent de votre UID réel (2013).
 
+---
+
+**Étape 2 : Utiliser GDB pour intercepter l’appel système `getuid()`**
+
+Lancez le programme sous gdb :
+
+```shell
+gdb -q level13
+```
+
+Définissez un breakpoint sur la fonction `getuid` :
+
+```gdb
+(gdb) break getuid
+```
+
+Lancez le programme :
+
+```gdb
+(gdb) run
+```
+
+Le breakpoint s’active :
+
+```gdb
+Breakpoint 1, 0xb7ee4cc0 in getuid () from /lib/i386-linux-gnu/libc.so.6
+```
+
+---
+
+**Étape 3 : Modifier la valeur de retour de `getuid()`**
+
+Continuez jusqu’à la fin de l’appel à `getuid()` :
+
+```gdb
+(gdb) finish
+```
+
+À la fin de l’appel, affichez la valeur retournée (`$eax`) :
+
+```gdb
+(gdb) print $eax
+$1 = 2013
+```
+
+Cette valeur correspond à votre UID réel.
+
+Changez-la en `4242`, comme attendu par le programme :
+
+```gdb
+(gdb) set $eax = 4242
+```
+
+Poursuivez l’exécution :
+
+```gdb
+(gdb) continue
+```
+
+Le programme donne alors le flag :
+
+```
+your token is 2A31L79asukciNyi8uppkEuSx
+```
+
+---
+
+**Étape 4 : Passer au niveau suivant**
+
+Utilisez le token obtenu pour vous connecter à l’utilisateur suivant :
+
+```shell
+su level14
+Mot de passe : 2A31L79asukciNyi8uppkEuSx
+```
+
+---
+
+### Comment Résoudre la Faille
+
+1. **Ne pas compter exclusivement sur des vérifications côté client :**
+
+   * Une vérification de sécurité (UID) côté utilisateur ou facilement manipulable (comme ici) n’offre aucune sécurité réelle.
+
+2. **Vérifier l’environnement d’exécution :**
+
+   * Ajoutez des vérifications anti-debugging plus avancées si nécessaire.
+   * Évitez de dépendre uniquement de l’UID réel retourné par `getuid()` sans authentification complémentaire robuste.
+
+3. **Compiler les binaires avec des protections appropriées :**
+
+   * Utilisez des outils pour détecter ou empêcher le debugging (stripping des symboles, protection anti-débogueur).
+
+---
+
+### Conclusion
+
+Cette faille démontre l'importance de ne jamais considérer comme sûr le résultat d'une fonction système, lorsque celle-ci peut être interceptée ou manipulée via un débogueur. Une protection fiable nécessite une authentification robuste et des protections anti-debug appropriées.

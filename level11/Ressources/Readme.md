@@ -1,47 +1,82 @@
-# Rapport de Vulnérabilité : Fuite de Mot de Passe via Fichier htpasswd
+**Description**
+Ce niveau exploite un script Lua (level11.lua) configuré avec le bit SUID appartenant à l’utilisateur flag11. Le script écoute en local sur le port 5151 et demande un « mot de passe ». En interne, il passe la saisie à la commande `echo … | sha1sum` pour comparer la valeur SHA-1. Comme l’entrée n’est nullement filtrée, il est possible d’injecter des commandes shell via la substitution de commande `$()`. Grâce au bit SUID, ces commandes s’exécutent avec les privilèges de flag11, ce qui permet de récupérer le flag de niveau 11.
 
-## Nom de la Faille
-Fuite de Mot de Passe via Fichier htpasswd
-**A07:2021 – Identification et authentification de mauvaise qualité**
+---
 
-## Description
-Cette faille permet à un attaquant d'accéder à une page d'administration protégée en exploitant un fichier `.htpasswd` mal sécurisé. En inspectant des pages sensibles du site web telles que `/robots.txt` ou `/admin`, l'attaquant peut découvrir des informations cruciales ou des fichiers sensibles exposés.
+## Comment Exploiter la Faille
 
-## Étapes pour Exploiter la Faille
-1. Visitez plusieurs pages sensibles à la racine du site web comme :
-   - `/robots.txt`
-   - `/admin`
-   - `/whatever`
+1. **Lancer une connexion vers le service**
+   Depuis une machine où le script tourne (en tant que flag11), exécutez :
 
-2. Lors de la navigation dans la page `/whatever`, repérez la présence d'un fichier `htpasswd`.
-
-3. Ouvrez le fichier pour lire le contenu :
    ```
-   root:437394baff5aa33daa618be47b75cb49
+   nc 127.0.0.1 5151
    ```
 
-4. Décryptez la chaîne de caractères en utilisant un déchiffreur MD5, ce qui donne :
+   On obtient alors :
+
    ```
-   qwerty123@
+   Password: 
    ```
 
-5. Allez sur la page d'administration `/admin` et entrez :
-   - **Nom d'utilisateur** : `root`
-   - **Mot de passe** : `qwerty123@`
+2. **Injecter la commande pour récupérer le flag**
+   En réponse à l’invite `Password:`, envoyez la substitution de commande suivante :
 
-6. Si l'authentification est réussie, le flag s'affiche :
    ```
-   d19b4823e0d5600ceed56d5e896ef328d7a2b9e7ac7e80f4fcdb9b10bcb3e7ff
+   $(getflag > /tmp/token)
    ```
 
-## Comment Corriger la Faille
-Pour corriger cette vulnérabilité, suivez ces recommandations :
-1. **Sécurisation des fichiers sensibles :** Ne laissez jamais un fichier `.htpasswd` accessible depuis le web. Stockez-le en dehors de la racine du serveur.
-2. **Restrictions d'accès :** Configurez le serveur pour restreindre l'accès aux fichiers de configuration sensibles.
-3. **Hash sécurisé :** Utilisez des algorithmes de hachage plus robustes que MD5, comme bcrypt ou Argon2.
-4. **Surveillance et journalisation :** Détectez les tentatives d'accès aux pages administratives ou aux fichiers sensibles.
+   * Lorsque le script Lua fait `echo $(getflag > /tmp/token) | sha1sum`, la commande `getflag` est exécutée avec les droits de flag11 et le résultat (le flag) est redirigé vers `/tmp/token`.
+   * Comme la chaîne interpolée n’est pas la bonne valeur SHA-1, le script renvoie alors :
+
+     ```
+     Erf nope..
+     ```
+
+     mais le flag a déjà été écrit dans `/tmp/token`.
+
+3. **Lire le flag depuis le fichier temporaire**
+   Toujours dans le même shell (ou une autre session), affichez le contenu de `/tmp/token` :
+
+   ```
+   cat /tmp/token
+   ```
+
+   Vous obtenez quelque chose comme :
+
+   ```
+   Check flag. Here is your token : fa6v5ateaw21peobuub8ipe6s
+   ```
+
+4. **Passer au niveau suivant**
+   Utilisez ce token comme mot de passe pour l’utilisateur level12 :
+
+   ```
+   su level12
+   Mot de passe : fa6v5ateaw21peobuub8ipe6s
+   ```
+
+   Vous êtes maintenant connecté en tant que level12.
+
+---
+
+## Comment Résoudre la Faille
+
+1. **Ne pas exécuter de commandes shell non filtrées sur une entrée utilisateur**
+
+   * Dans le script Lua, remplacer l’usage de `io.popen("echo "..pass.." | sha1sum", "r")` par une fonction de hachage native (par exemple l’API Lua pour SHA-1) qui ne fait pas appel à un shell.
+   * Ou, à défaut, au minimum échapper rigoureusement toute séquence `$()` ou backticks pour empêcher l’injection.
+
+2. **Retirer le bit SUID**
+
+   * Si le processus n’a pas besoin d’écrire sous un autre utilisateur, retirer le bit SUID sur le binaire Lua ou sur le script level11.lua.
+   * Ainsi, un attaquant ne pourra plus exécuter `getflag` avec les droits de flag11.
+
+3. **Exiger un mot de passe solide**
+
+   * Ne pas se contenter de comparer une seule valeur SHA-1 codée en dur dans le script. Au minimum, lire un fichier de mot de passe haché, appliquer un salts et forcer l’utilisateur à fournir la bonne empreinte sans proposer d’exécution shell.
+
+---
 
 ## Conclusion
-Cette faille illustre l'importance de la protection des fichiers critiques dans une application web. L'utilisation de bonnes pratiques de sécurisation des fichiers, ainsi que de l'authentification renforcée, permet de réduire considérablement les risques d'intrusion.
 
-
+Cette vulnérabilité illustre le danger d’utiliser `io.popen` (ou tout appel shell) sur une entrée brutale de l’utilisateur, surtout dans un contexte SUID : une simple substitution de commande suffit à exécuter arbitrairement `getflag`. Pour corriger, il faut impérativement supprimer toute exécution shell non filtrée, ou bien retirer le bit SUID pour éviter que le binaire s’exécute avec des privilèges élevés.

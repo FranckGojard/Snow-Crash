@@ -1,34 +1,98 @@
-# Rapport de Vulnérabilité : Inclusion de Fichier Local (LFI)
+Rapport de Vulnérabilité : Contournement de Protection via gdb (Manipulation des fonctions ptrace et getuid)
+Description
+Cette vulnérabilité exploite la possibilité d’utiliser un débogueur (ici, GDB) pour manipuler le comportement interne du binaire /bin/getflag. Ce binaire utilise deux protections principales :
 
-## Nom de la Faille
+ptrace() pour détecter si le binaire est débogué, ce qui empêche son exécution sous débogueur.
 
-**Inclusion de Fichier Local (LFI)**
-## OWASP
-**A01:2021 – Contrôles d'accès défaillants**
-**CWE-35 Path Traversal: '.../...//'**
-**A10:2021 – A10 Falsification de requête côté serveur (SSRF)**
+getuid() pour vérifier que l’utilisateur exécutant le binaire possède l’UID attendu (ici 3014).
 
-## Description
+En interceptant ces appels via GDB, il est possible de contourner ces protections, modifiant directement les valeurs retournées par ces fonctions, et ainsi récupérer le token associé au niveau.
 
-Cette faille permet à un attaquant de lire des fichiers sensibles du serveur en manipulant un paramètre GET mal sécurisé. En exploitant cette vulnérabilité, il est possible d'accéder à des fichiers critiques tels que `/etc/passwd` sur un système Linux.
+Comment Exploiter la Faille
+Étape 1 : Lancement du binaire sous GDB
+Exécuter le binaire sous débogueur :
 
-## Comment Exploiter la Faille
+shell
+Copier
+Modifier
+gdb /bin/getflag
+Définir deux points d’arrêt (breakpoints) sur les fonctions clés :
 
-1. **Étape 1** : Identifiez un paramètre vulnérable acceptant des chemins de fichiers dans l'URL.
-2. **Étape 2** : Manipulez ce paramètre en utilisant `../` pour remonter dans l'arborescence des fichiers et atteindre des fichiers sensibles.
-3. **Exemple d'exploitation** : `http://localhost:8080page=../../../../../../../../..etc/passwd`
-4. **Résultat attendu** : Affichage du contenu du fichier `/etc/passwd`, révélant la liste des utilisateurs du système.
+gdb
+Copier
+Modifier
+break ptrace
+break getuid
+Étape 2 : Contournement de la protection anti-debug (ptrace)
+Lancer le programme sous GDB :
 
-## Comment Résoudre la Faille
+gdb
+Copier
+Modifier
+run
+Le programme s’arrête sur l’appel à ptrace() (utilisé pour détecter la présence de GDB) :
 
-Pour corriger cette vulnérabilité, appliquez les mesures suivantes :
+gdb
+Copier
+Modifier
+Breakpoint 1, ptrace () ...
+Terminer l’exécution de la fonction ptrace() et modifier la valeur retournée ($eax) pour simuler qu’aucun débogueur n’est présent :
 
-- **Validation stricte des entrées utilisateur** : Vérifiez et restreignez les valeurs acceptées par le paramètre concerné.
-- **Utilisation de chemins absolus** : N’autorisez pas la concaténation de chemins de fichiers dynamiques en fonction des entrées utilisateur.
-- **Désactivation des wrappers dangereux** : Restreignez l'accès aux flux comme `php://` et `data://` si possible.
-- **Configuration du serveur** : Appliquez des restrictions sur les accès aux fichiers sensibles via les permissions système et la configuration du serveur web.
+gdb
+Copier
+Modifier
+finish
+set $eax = 0
+continue
+Étape 3 : Modification du résultat de getuid()
+Le programme s’arrête sur l’appel à getuid(), vérifiant si l’UID correspond à celui attendu (ici 3014) :
 
-## Conclusion
+gdb
+Copier
+Modifier
+Breakpoint 2, getuid () ...
+Terminer l’exécution de la fonction getuid() et modifier la valeur retournée ($eax) pour correspondre à l’UID requis :
 
-L'inclusion de fichiers locaux est une faille critique qui peut compromettre un serveur entier. Une validation stricte des entrées utilisateur et des configurations de sécurité renforcées sont essentielles pour protéger l'application contre ces attaques.
+gdb
+Copier
+Modifier
+finish
+set $eax = 3014
+continue
+Le programme exécute désormais le chemin privilégié et affiche le token :
+
+mathematica
+Copier
+Modifier
+Check flag.Here is your token : 7QiHafiNa3HVozsaXkawuYrTstxbpABHD8CPnHJ
+Étape 4 : Passage au niveau suivant
+Utilisez ce token pour accéder à l'utilisateur suivant :
+
+shell
+Copier
+Modifier
+su level15
+Mot de passe : 7QiHafiNa3HVozsaXkawuYrTstxbpABHD8CPnHJ
+Comment Résoudre la Faille
+Renforcer la protection anti-debug (ptrace) :
+
+Ajouter des protections supplémentaires qui rendent le contournement via GDB plus difficile (plusieurs appels ptrace, vérifications croisées, anti-debugging avancé).
+
+Éviter la confiance absolue envers les résultats des fonctions systèmes :
+
+Ne pas baser la sécurité uniquement sur les résultats retournés par des appels systèmes pouvant être manipulés via débogueurs.
+
+Utiliser des méthodes d'authentification robustes :
+
+Mettre en place des mécanismes cryptographiques ou autres vérifications externes plutôt que de simples vérifications de l’UID ou de la présence de débogueur.
+
+Conclusion
+Cette vulnérabilité montre clairement les limites d’un mécanisme de sécurité basé uniquement sur des fonctions comme ptrace() ou getuid(). Les attaquants peuvent facilement intercepter et modifier ces résultats via des outils courants de debugging tels que GDB. Pour protéger efficacement un programme, il est nécessaire d’employer une stratégie de défense en profondeur, avec des mécanismes multiples et complémentaires.
+
+
+
+
+
+
+
 
