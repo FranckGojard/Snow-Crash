@@ -15,13 +15,6 @@ chmod +x /tmp/echo
 
 > Ce script exécute simplement `getflag` à la place de `echo`.
 
-**Alternative pour test :**
-
-```bash
-echo -e '#!/bin/sh\necho pwned' > /tmp/echo
-chmod +x /tmp/echo
-```
-
 ### Étape 2 : Modifier le `$PATH`
 
 Placer `/tmp` en tête du `PATH` pour forcer le programme à utiliser notre faux `echo` :
